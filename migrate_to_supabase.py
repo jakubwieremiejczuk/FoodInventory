@@ -22,7 +22,7 @@ SUPABASE_KEY = (
 DB_PATH = Path(__file__).parent / "food_inventory.db"
 
 
-def migrate():
+def migrate(clear_first=False):
     # 1. Read items from SQLite
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -37,7 +37,13 @@ def migrate():
     # 2. Connect to Supabase
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # 3. Insert items in batches
+    # 3. Optionally clear existing data
+    if clear_first:
+        print("Clearing existing inventory...")
+        supabase.table("inventory").delete().neq("id", 0).execute()
+        print("  Cleared.")
+
+    # 4. Insert items in batches
     BATCH_SIZE = 50
     for i in range(0, len(items), BATCH_SIZE):
         batch = items[i : i + BATCH_SIZE]
@@ -67,6 +73,7 @@ CREATE POLICY "Allow all access" ON inventory
 """)
     answer = input("Have you created the table? (y/n): ").strip().lower()
     if answer == "y":
-        migrate()
+        clear = input("Clear existing data first? (y/n): ").strip().lower() == "y"
+        migrate(clear_first=clear)
     else:
         print("Create the table first, then run this script again.")

@@ -21,82 +21,82 @@ def create_database():
         )
     """)
 
-    # Translated and normalized inventory from FirstInv.md
+    # Inventory from FirstInv.md (Polish)
     items = [
-        # Canned goods
-        ("Canned tomatoes", 5, "can", "Canned goods"),
-        ("Chickpeas", 5, "can", "Canned goods"),
-        ("Corn", 5, "can", "Canned goods"),
-        ("Green olives", 1, "jar", "Canned goods"),
-        ("Black olives", 1, "jar", "Canned goods"),
-        ("Tomato passata", 2, "pack", "Canned goods"),  # 2 x 200ml
+        # Konserwy
+        ("Pomidory w puszce", 5, "puszka", "Konserwy"),
+        ("Ciecierzyca", 5, "puszka", "Konserwy"),
+        ("Kukurydza", 5, "puszka", "Konserwy"),
+        ("Oliwki zielone", 1, "słoik", "Konserwy"),
+        ("Oliwki czarne", 1, "słoik", "Konserwy"),
+        ("Passata pomidorowa", 2, "opak.", "Konserwy"),  # 2 x 200ml
 
-        # Condiments & sauces
-        ("Harissa", 1, "jar", "Condiments"),
-        ("Red pesto", 1, "jar", "Condiments"),
-        ("Green pesto", 1, "jar", "Condiments"),
-        ("Capers", 2, "jar", "Condiments"),
-        ("Anchovies", 1, "jar", "Condiments"),
-        ("Miso paste", 1, "jar", "Condiments"),
-        ("Balsamic vinegar", 1, "bottle", "Condiments"),
-        ("Vinegar", 1, "bottle", "Condiments"),
-        ("Sesame oil", 1, "bottle", "Condiments"),
-        ("Fermented soy sauce", 1, "bottle", "Condiments"),
-        ("Chili oil", 1, "bottle", "Condiments"),
-        ("Worcestershire sauce", 1, "bottle", "Condiments"),
-        ("Tahini", 1, "jar", "Condiments"),
+        # Przyprawy i sosy
+        ("Harissa", 1, "słoik", "Przyprawy i sosy"),
+        ("Pesto czerwone", 1, "słoik", "Przyprawy i sosy"),
+        ("Pesto zielone", 1, "słoik", "Przyprawy i sosy"),
+        ("Kapary", 2, "słoik", "Przyprawy i sosy"),
+        ("Anchois", 1, "słoik", "Przyprawy i sosy"),
+        ("Pasta miso", 1, "słoik", "Przyprawy i sosy"),
+        ("Ocet balsamiczny", 1, "butelka", "Przyprawy i sosy"),
+        ("Ocet", 1, "butelka", "Przyprawy i sosy"),
+        ("Olej sezamowy", 1, "butelka", "Przyprawy i sosy"),
+        ("Sos sojowy", 1, "butelka", "Przyprawy i sosy"),
+        ("Olej chili", 1, "butelka", "Przyprawy i sosy"),
+        ("Sos worcestershire", 1, "butelka", "Przyprawy i sosy"),
+        ("Tahini", 1, "słoik", "Przyprawy i sosy"),
 
-        # Grains & legumes
-        ("Brown rice", 500, "g", "Grains & legumes"),
-        ("Pinto beans", 500, "g", "Grains & legumes"),
-        ("Green peas (dried)", 500, "g", "Grains & legumes"),
-        ("Red lentils", 500, "g", "Grains & legumes"),
-        ("Buckwheat groats", 300, "g", "Grains & legumes"),
-        ("Brown lentils", 150, "g", "Grains & legumes"),
-        ("Basmati rice", 200, "g", "Grains & legumes"),
+        # Kasze i rośliny strączkowe
+        ("Ryż brązowy", 500, "g", "Kasze i rośliny strączkowe"),
+        ("Fasola pinto", 500, "g", "Kasze i rośliny strączkowe"),
+        ("Groch zielony (suszony)", 500, "g", "Kasze i rośliny strączkowe"),
+        ("Soczewica czerwona", 500, "g", "Kasze i rośliny strączkowe"),
+        ("Kasza gryczana", 300, "g", "Kasze i rośliny strączkowe"),
+        ("Soczewica brązowa", 150, "g", "Kasze i rośliny strączkowe"),
+        ("Ryż basmati", 200, "g", "Kasze i rośliny strączkowe"),
 
-        # Pasta & flour
-        ("Risoni pasta", 500, "g", "Pasta & flour"),
-        ("Spelt flour", 1000, "g", "Pasta & flour"),  # 1kg
-        ("Pizza flour", 1000, "g", "Pasta & flour"),  # 1kg
-        ("Spelt flour", 200, "g", "Pasta & flour"),   # second bag
-        ("Wheat flour", 200, "g", "Pasta & flour"),
-        ("Oat flakes", 1, "pack", "Pasta & flour"),
+        # Makarony i mąki
+        ("Makaron risoni", 500, "g", "Makarony i mąki"),
+        ("Mąka orkiszowa", 1000, "g", "Makarony i mąki"),  # 1kg
+        ("Mąka do pizzy", 1000, "g", "Makarony i mąki"),  # 1kg
+        ("Mąka orkiszowa", 200, "g", "Makarony i mąki"),   # second bag
+        ("Mąka pszenna", 200, "g", "Makarony i mąki"),
+        ("Płatki owsiane", 1, "opak.", "Makarony i mąki"),
 
-        # Curry & spice pastes
-        ("Red curry paste", 2, "pack", "Curry & spice pastes"),
-        ("Yellow curry paste", 1, "pack", "Curry & spice pastes"),
-        ("Tamarind paste", 1, "pack", "Curry & spice pastes"),
+        # Pasty curry
+        ("Pasta curry czerwona", 2, "opak.", "Pasty curry"),
+        ("Pasta curry żółta", 1, "opak.", "Pasty curry"),
+        ("Pasta tamaryndowa", 1, "opak.", "Pasty curry"),
 
-        # Baking
-        ("Cornstarch", 1, "pack", "Baking"),  # Speisestärke
-        ("Yeast", 7, "piece", "Baking"),
-        ("Vanilla sugar", 10, "piece", "Baking"),
-        ("Baking powder", 13, "piece", "Baking"),
-        ("Baking soda", 2, "piece", "Baking"),
-        ("Pudding mix", 4, "piece", "Baking"),
-        ("Gelatin", 1, "pack", "Baking"),
-        ("Orange zest (dried)", 3, "piece", "Baking"),
-        ("Cocoa powder", 1, "pack", "Baking"),
-        ("Baking chocolate", 1, "pack", "Baking"),
-        ("Vanilla beans", 4, "piece", "Baking"),
+        # Pieczenie
+        ("Skrobia kukurydziana", 1, "opak.", "Pieczenie"),
+        ("Drożdże", 7, "szt.", "Pieczenie"),
+        ("Cukier waniliowy", 10, "szt.", "Pieczenie"),
+        ("Proszek do pieczenia", 13, "szt.", "Pieczenie"),
+        ("Soda oczyszczona", 2, "szt.", "Pieczenie"),
+        ("Budyń", 4, "szt.", "Pieczenie"),
+        ("Żelatyna", 1, "opak.", "Pieczenie"),
+        ("Skórka pomarańczowa (suszona)", 3, "szt.", "Pieczenie"),
+        ("Kakao", 1, "opak.", "Pieczenie"),
+        ("Czekolada do pieczenia", 1, "opak.", "Pieczenie"),
+        ("Laska wanilii", 4, "szt.", "Pieczenie"),
 
-        # Sugar & salt
-        ("Sugar", 1500, "g", "Sugar & salt"),
-        ("Sea salt", 500, "g", "Sugar & salt"),
-        ("Powdered sugar", 250, "g", "Sugar & salt"),
+        # Cukier i sól
+        ("Cukier", 1500, "g", "Cukier i sól"),
+        ("Sól morska", 500, "g", "Cukier i sól"),
+        ("Cukier puder", 250, "g", "Cukier i sól"),
 
-        # Nuts & seeds
-        ("Sesame seeds", 400, "g", "Nuts & seeds"),
-        ("Sunflower seeds (hulled)", 500, "g", "Nuts & seeds"),
-        ("Pistachios", 250, "g", "Nuts & seeds"),
-        ("Mixed nuts", 800, "g", "Nuts & seeds"),
-        ("Almonds", 250, "g", "Nuts & seeds"),
-        ("Popcorn kernels", 100, "g", "Nuts & seeds"),
-        ("Chia seeds", 300, "g", "Nuts & seeds"),
-        ("Walnuts", 400, "g", "Nuts & seeds"),
-        ("Mixed seeds", 150, "g", "Nuts & seeds"),
-        ("Flaxseed", 400, "g", "Nuts & seeds"),
+        # Orzechy i nasiona
+        ("Sezam", 400, "g", "Orzechy i nasiona"),
+        ("Pestki słonecznika", 500, "g", "Orzechy i nasiona"),
+        ("Pistacje", 250, "g", "Orzechy i nasiona"),
+        ("Mieszanka orzechów", 800, "g", "Orzechy i nasiona"),
+        ("Migdały", 250, "g", "Orzechy i nasiona"),
+        ("Kukurydza na popcorn", 100, "g", "Orzechy i nasiona"),
+        ("Nasiona chia", 300, "g", "Orzechy i nasiona"),
+        ("Orzechy włoskie", 400, "g", "Orzechy i nasiona"),
+        ("Mieszanka nasion", 150, "g", "Orzechy i nasiona"),
+        ("Siemię lniane", 400, "g", "Orzechy i nasiona"),
     ]
 
     cur.executemany(
@@ -117,7 +117,10 @@ def create_database():
     """)
     print("\nItems by category:")
     for row in cur.fetchall():
-        print(f"  {row[0]}: {row[1]}")
+        try:
+            print(f"  {row[0]}: {row[1]}")
+        except UnicodeEncodeError:
+            print(f"  {row[0].encode('ascii', 'replace').decode()}: {row[1]}")
 
     conn.close()
 
