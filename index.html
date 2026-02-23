@@ -538,13 +538,93 @@
 
     // ==================== RECIPE FEATURE ====================
 
-    let recipeMatches = []; // { ingredient, matched: true/false, inventoryItem, inventoryId }
+    let recipeMatches = []; // { ingredient, matched, inventoryItem, inventoryId, recipeQty, recipeUnit }
 
-    function normalize(str) {
+    // Strip Polish diacritics
+    function stripPl(str) {
       return str.toLowerCase()
         .replace(/ą/g,'a').replace(/ć/g,'c').replace(/ę/g,'e')
         .replace(/ł/g,'l').replace(/ń/g,'n').replace(/ó/g,'o')
         .replace(/ś/g,'s').replace(/ź/g,'z').replace(/ż/g,'z');
+    }
+
+    // Crude Polish stemmer: chop common suffixes so declined forms match
+    // "pszennej"→"pszenn", "mąki"→"mak", "cukru"→"cukr", "proszku"→"proszk"
+    function stem(word) {
+      let w = stripPl(word);
+      // order matters — longest suffixes first
+      const suffixes = [
+        'owej','owego','owych','owym',
+        'nej','nego','nych','nym',
+        'iej','iego','iych','iem',
+        'ej','ego','ych','ym',
+        'ow','ow','ami','ach',
+        'om','ie','ki','ku',
+        'ce','ek','ka','ko',
+        'ow','em','ze','y',
+        'i','u','a','e','o'
+      ];
+      if (w.length <= 3) return w;
+      for (const s of suffixes) {
+        if (w.length - s.length >= 3 && w.endsWith(s)) {
+          return w.slice(0, -s.length);
+        }
+      }
+      return w;
+    }
+
+    // Get stems of all significant words in a string (3+ chars)
+    function getStems(str) {
+      return stripPl(str).split(/[\s,.\-–()/]+/)
+        .filter(w => w.length >= 3)
+        .map(w => stem(w));
+    }
+
+    // Parse quantity + unit from recipe ingredient text
+    // e.g. "1,5 szklanki mąki pszennej - 250 g" → { qty: 250, unit: 'g' }
+    // e.g. "3 jajka" → { qty: 3, unit: 'szt.' }
+    function parseRecipeQty(text) {
+      const t = text.toLowerCase();
+      // Prefer explicit gram/ml amounts (often after dash)
+      const gramMatch = t.match(/(\d+[.,]?\d*)\s*(g|kg|ml|l)\b/);
+      if (gramMatch) {
+        let val = parseFloat(gramMatch[1].replace(',', '.'));
+        let unit = gramMatch[2];
+        if (unit === 'kg') { val *= 1000; unit = 'g'; }
+        if (unit === 'l') { val *= 1000; unit = 'ml'; }
+        return { qty: val, unit };
+      }
+      // Count-based: look for leading number
+      const countMatch = t.match(/^(\d+[.,]?\d*)/);
+      if (countMatch) {
+        return { qty: parseFloat(countMatch[1].replace(',', '.')), unit: 'szt.' };
+      }
+      return { qty: 1, unit: 'szt.' };
+    }
+
+    // Score how well an inventory item matches a recipe ingredient (0 = no match)
+    function matchScore(invName, ingText) {
+      const invStems = getStems(invName);
+      const ingStems = getStems(ingText);
+      if (invStems.length === 0) return 0;
+
+      let matched = 0;
+      for (const is of invStems) {
+        // Check if any ingredient stem starts with the same root (or vice versa)
+        for (const gs of ingStems) {
+          if (is.length >= 3 && gs.length >= 3) {
+            // Share at least 3-char prefix
+            const minLen = Math.min(is.length, gs.length);
+            const prefix = Math.min(minLen, 4); // compare first 4 chars
+            if (is.slice(0, prefix) === gs.slice(0, prefix)) {
+              matched++;
+              break;
+            }
+          }
+        }
+      }
+      // Require all inventory name stems to match
+      return matched === invStems.length ? matched : 0;
     }
 
     async function checkRecipe() {
@@ -574,29 +654,25 @@
         // Make sure inventory is loaded
         if (allItems.length === 0) await loadItems();
 
-        // Match ingredients against inventory
+        // Match ingredients against inventory using stem matching
         recipeMatches = data.ingredients.map(ingText => {
-          const normIng = normalize(ingText);
           let bestMatch = null;
+          let bestScore = 0;
           for (const inv of allItems) {
-            const normName = normalize(inv.name);
-            // Check if inventory name appears in ingredient text or vice versa
-            if (normIng.includes(normName) || normName.includes(normIng)) {
+            const score = matchScore(inv.name, ingText);
+            if (score > bestScore) {
+              bestScore = score;
               bestMatch = inv;
-              break;
-            }
-            // Also check individual words from inventory name (2+ chars)
-            const words = normName.split(/\s+/).filter(w => w.length > 2);
-            if (words.length > 1 && words.every(w => normIng.includes(w))) {
-              bestMatch = inv;
-              break;
             }
           }
+          const parsed = parseRecipeQty(ingText);
           return {
             ingredient: ingText,
             matched: !!bestMatch,
             inventoryItem: bestMatch,
-            inventoryId: bestMatch ? bestMatch.id : null
+            inventoryId: bestMatch ? bestMatch.id : null,
+            recipeQty: parsed.qty,
+            recipeUnit: parsed.unit
           };
         });
 
@@ -618,9 +694,12 @@
         for (const m of haveList) {
           const inv = m.inventoryItem;
           const qty = inv.quantity === Math.floor(inv.quantity) ? Math.floor(inv.quantity) : inv.quantity;
+          const need = m.recipeQty + ' ' + m.recipeUnit;
           html += '<div class="recipe-item">'
-            + '<span class="ri-text">' + escapeHtml(m.ingredient) + '</span>'
-            + '<span class="ri-stock have">' + qty + ' ' + escapeHtml(inv.unit) + '</span>'
+            + '<span class="ri-text">' + escapeHtml(m.ingredient)
+            + '<br><small style="color:var(--text-dim)">potrzeba: ' + need + ' · masz: ' + qty + ' ' + escapeHtml(inv.unit) + '</small>'
+            + '</span>'
+            + '<span class="ri-stock have">✓</span>'
             + '</div>';
         }
       }
@@ -658,15 +737,20 @@
       try {
         for (const m of matched) {
           const inv = m.inventoryItem;
-          // Reduce quantity by 1 for countable items, or by a portion for grams
-          let newQty;
-          if (['g', 'ml'].includes(inv.unit)) {
-            // Deduct ~portion (e.g. reduce by 20% or minimum 50g)
-            const deduct = Math.max(50, Math.round(inv.quantity * 0.2));
-            newQty = inv.quantity - deduct;
+          // Deduct the parsed recipe quantity
+          let deduct = m.recipeQty || 1;
+          // If units match (both g, both ml), deduct directly
+          // If recipe unit is szt. and inv is countable, deduct count
+          // If units don't match, deduct 1 as fallback
+          if (['g', 'ml'].includes(inv.unit) && ['g', 'ml'].includes(m.recipeUnit)) {
+            // direct deduction
+          } else if (!['g', 'ml'].includes(inv.unit)) {
+            deduct = m.recipeQty || 1;
           } else {
-            newQty = inv.quantity - 1;
+            // recipe says szt. but inventory is in g — estimate or deduct 1 portion
+            deduct = Math.min(m.recipeQty * 50, inv.quantity);
           }
+          let newQty = inv.quantity - deduct;
 
           if (newQty <= 0) {
             await fetch(API_URL + '/inventory?id=eq.' + inv.id, { method: 'DELETE', headers: HEADERS });
