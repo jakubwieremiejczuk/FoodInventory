@@ -666,9 +666,28 @@
             }
           }
           const parsed = parseRecipeQty(ingText);
+          // Determine if we have enough
+          // status: 'have' = enough, 'low' = found but not enough, 'need' = not in inventory
+          let status = 'need';
+          let shortage = 0;
+          if (bestMatch) {
+            const sameUnit = (bestMatch.unit === parsed.unit) ||
+              (['g','ml'].includes(bestMatch.unit) && ['g','ml'].includes(parsed.unit));
+            if (sameUnit && bestMatch.quantity >= parsed.qty) {
+              status = 'have';
+            } else if (sameUnit) {
+              status = 'low';
+              shortage = Math.ceil(parsed.qty - bestMatch.quantity);
+            } else {
+              // Different units — can't compare precisely, assume have
+              status = 'have';
+            }
+          }
           return {
             ingredient: ingText,
             matched: !!bestMatch,
+            status,
+            shortage,
             inventoryItem: bestMatch,
             inventoryId: bestMatch ? bestMatch.id : null,
             recipeQty: parsed.qty,
@@ -684,8 +703,9 @@
 
     function renderRecipeResults(title, matches) {
       const results = document.getElementById('recipe-results');
-      const haveList = matches.filter(m => m.matched);
-      const needList = matches.filter(m => !m.matched);
+      const haveList = matches.filter(m => m.status === 'have');
+      const lowList = matches.filter(m => m.status === 'low');
+      const needList = matches.filter(m => m.status === 'need');
 
       let html = '<div class="recipe-title">' + escapeHtml(title) + '</div>';
 
@@ -694,12 +714,25 @@
         for (const m of haveList) {
           const inv = m.inventoryItem;
           const qty = inv.quantity === Math.floor(inv.quantity) ? Math.floor(inv.quantity) : inv.quantity;
-          const need = m.recipeQty + ' ' + m.recipeUnit;
           html += '<div class="recipe-item">'
             + '<span class="ri-text">' + escapeHtml(m.ingredient)
-            + '<br><small style="color:var(--text-dim)">potrzeba: ' + need + ' · masz: ' + qty + ' ' + escapeHtml(inv.unit) + '</small>'
+            + '<br><small style="color:var(--text-dim)">potrzeba: ' + m.recipeQty + ' ' + m.recipeUnit + ' · masz: ' + qty + ' ' + escapeHtml(inv.unit) + '</small>'
             + '</span>'
             + '<span class="ri-stock have">✓</span>'
+            + '</div>';
+        }
+      }
+
+      if (lowList.length > 0) {
+        html += '<div class="recipe-section-title" style="color:#f39c12">Za mało (' + lowList.length + ')</div>';
+        for (const m of lowList) {
+          const inv = m.inventoryItem;
+          const qty = inv.quantity === Math.floor(inv.quantity) ? Math.floor(inv.quantity) : inv.quantity;
+          html += '<div class="recipe-item">'
+            + '<span class="ri-text">' + escapeHtml(m.ingredient)
+            + '<br><small style="color:var(--text-dim)">potrzeba: ' + m.recipeQty + ' ' + m.recipeUnit + ' · masz: ' + qty + ' ' + escapeHtml(inv.unit) + ' · <b style="color:#f39c12">dokup ' + m.shortage + ' ' + escapeHtml(inv.unit) + '</b></small>'
+            + '</span>'
+            + '<span class="ri-stock" style="color:#f39c12">⚠</span>'
             + '</div>';
         }
       }
@@ -714,7 +747,7 @@
         }
       }
 
-      if (haveList.length > 0) {
+      if (haveList.length > 0 || lowList.length > 0) {
         html += '<div class="cooking-btn-wrap">'
           + '<button class="cooking-btn" onclick="startCooking()">Gotuję!</button>'
           + '</div>';
