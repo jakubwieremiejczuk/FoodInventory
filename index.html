@@ -460,16 +460,8 @@
         <option value="butelka">butelka</option>
       </select>
       <label for="f-category">Kategoria</label>
-      <select id="f-category">
-        <option value="Konserwy">Konserwy</option>
-        <option value="Przyprawy i sosy">Przyprawy i sosy</option>
-        <option value="Kasze i rośliny strączkowe">Kasze i rośliny strączkowe</option>
-        <option value="Makarony i mąki">Makarony i mąki</option>
-        <option value="Pasty curry">Pasty curry</option>
-        <option value="Pieczenie">Pieczenie</option>
-        <option value="Cukier i sól">Cukier i sól</option>
-        <option value="Orzechy i nasiona">Orzechy i nasiona</option>
-      </select>
+      <input type="text" id="f-category" list="cat-list" placeholder="np. Konserwy">
+      <datalist id="cat-list"></datalist>
       <div class="modal-actions" id="modal-actions">
         <button class="btn btn-secondary" onclick="closeModal()">Anuluj</button>
         <button class="btn btn-primary" id="btn-save" onclick="saveItem()">Dodaj</button>
@@ -510,11 +502,27 @@
       document.getElementById('nav-' + name).classList.add('active');
     }
 
+    // --- Categories (dynamic from data) ---
+    function getCategories() {
+      const cats = new Set();
+      allItems.forEach(i => cats.add(i.category));
+      // Also include any from custom receipt map
+      Object.values(customMap).forEach(m => { if (m.category) cats.add(m.category); });
+      return [...cats].sort();
+    }
+
+    function updateCatDatalist() {
+      const dl = document.getElementById('cat-list');
+      if (!dl) return;
+      dl.innerHTML = getCategories().map(c => '<option value="' + escapeHtml(c) + '">').join('');
+    }
+
     // --- Load items ---
     async function loadItems() {
       try {
         allItems = await api('/inventory?select=*&order=category,name');
         renderItems(allItems);
+        updateCatDatalist();
       } catch (err) {
         document.getElementById('item-list').innerHTML =
           '<div class="empty">Błąd ładowania.<br><small>' + err.message + '</small></div>';
@@ -581,7 +589,7 @@
       document.getElementById('f-name').value = '';
       document.getElementById('f-quantity').value = '';
       document.getElementById('f-unit').value = 'g';
-      document.getElementById('f-category').value = 'Konserwy';
+      document.getElementById('f-category').value = getCategories()[0] || '';
       document.getElementById('btn-save').textContent = 'Dodaj';
       var existing = document.getElementById('btn-delete');
       if (existing) existing.remove();
@@ -1249,9 +1257,7 @@
       let html = '<div style="padding:12px 16px 4px"><b>Rozpoznane produkty (' + scannedItems.length + ')</b></div>';
 
       const unitOptions = ['g','ml','szt.','opak.','puszka','słoik','butelka','kg'];
-      const catOptions = ['Konserwy','Przyprawy i sosy','Kasze i rośliny strączkowe','Makarony i mąki',
-        'Pasty curry','Pieczenie','Cukier i sól','Orzechy i nasiona',
-        'Warzywa i owoce','Nabiał','Mięso','Pieczywo','Napoje','Inne'];
+      const catOptions = getCategories();
 
       scannedItems.forEach((item, idx) => {
         const checked = item.selected ? 'checked' : '';
@@ -1315,17 +1321,21 @@
 
         html += '</div>'; // si-edit qty
 
-        // Category selector
+        // Category input with autocomplete
         html += '<div class="si-edit">'
           + '<span style="font-size:12px;color:var(--text-dim);min-width:42px">Kat.:</span>'
-          + '<select style="flex:1" onchange="updateScanCat(' + idx + ', this.value)" onclick="event.stopPropagation()">';
-        for (const c of catOptions) {
-          html += '<option value="' + c + '"' + (c === plCat ? ' selected' : '') + '>' + c + '</option>';
-        }
-        html += '</select></div>';
+          + '<input type="text" list="scan-cat-list" style="flex:1;width:auto" value="' + escapeHtml(plCat) + '" '
+          + 'placeholder="Kategoria" '
+          + 'onchange="updateScanCat(' + idx + ', this.value)" onclick="event.stopPropagation()">'
+          + '</div>';
 
         html += '</div></div>'; // si-info, scan-item
       });
+
+      // Category datalist for scan items
+      html += '<datalist id="scan-cat-list">';
+      for (const c of catOptions) { html += '<option value="' + escapeHtml(c) + '">'; }
+      html += '</datalist>';
 
       const selectedCount = scannedItems.filter(i => i.selected).length;
       html += '<div class="scan-actions">'
