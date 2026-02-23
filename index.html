@@ -274,6 +274,79 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+
+    /* --- Receipt/Paragon view --- */
+    .receipt-upload {
+      padding: 16px;
+      text-align: center;
+    }
+    .receipt-upload label {
+      display: block;
+      padding: 40px 20px;
+      border: 2px dashed rgba(255,255,255,0.2);
+      border-radius: var(--radius);
+      cursor: pointer;
+      color: var(--text-dim);
+      font-size: 15px;
+      transition: border-color 0.2s;
+    }
+    .receipt-upload label:active { border-color: var(--accent); }
+    .receipt-upload input { display: none; }
+    .receipt-upload svg { display: block; margin: 0 auto 8px; width: 40px; height: 40px; }
+
+    .receipt-progress {
+      padding: 16px;
+      text-align: center;
+      color: var(--text-dim);
+    }
+    .receipt-progress .bar {
+      height: 4px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      margin: 12px 0;
+      overflow: hidden;
+    }
+    .receipt-progress .bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 0.3s;
+    }
+
+    .scan-item {
+      display: flex;
+      align-items: center;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      margin: 0 16px 6px;
+      gap: 10px;
+    }
+    .scan-item .si-check {
+      width: 22px; height: 22px;
+      border-radius: 4px;
+      border: 2px solid var(--text-dim);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .scan-item .si-check.checked { background: var(--green); border-color: var(--green); }
+    .scan-item .si-info { flex: 1; min-width: 0; }
+    .scan-item .si-de { font-size: 13px; color: var(--text-dim); }
+    .scan-item .si-pl { font-size: 14px; }
+    .scan-item .si-qty { font-size: 13px; color: var(--green); white-space: nowrap; }
+    .scan-item .si-new { font-size: 11px; color: var(--accent); }
+
+    .scan-actions { padding: 16px; }
+    .scan-actions button {
+      width: 100%;
+      padding: 14px;
+      border-radius: var(--radius);
+      border: none;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -305,6 +378,22 @@
     </div>
   </div>
 
+  <!-- ===== RECEIPT VIEW ===== -->
+  <div id="view-receipt" class="view">
+    <div class="header">
+      <h1>Paragon</h1>
+    </div>
+    <div id="receipt-content">
+      <div class="receipt-upload">
+        <label for="receipt-file">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Zrob zdjecie lub wybierz plik
+        </label>
+        <input type="file" id="receipt-file" accept="image/*" capture="environment" onchange="scanReceipt(this)">
+      </div>
+    </div>
+  </div>
+
   <!-- ===== BOTTOM NAV ===== -->
   <nav class="bottom-nav">
     <button class="nav-btn active" id="nav-list" onclick="switchView('list')">
@@ -318,6 +407,10 @@
     <button class="nav-btn" id="nav-recipe" onclick="switchView('recipe')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
       Przepis
+    </button>
+    <button class="nav-btn" id="nav-receipt" onclick="switchView('receipt')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+      Paragon
     </button>
   </nav>
 
@@ -807,6 +900,395 @@
         alert('Błąd: ' + err.message);
         btn.disabled = false;
         btn.textContent = 'Gotuję!';
+      }
+    }
+
+    // ==================== RECEIPT SCANNER ====================
+
+    // German → Polish grocery mapping (keyword → {name, unit, category})
+    const DE_PL_MAP = {
+      // Vegetables / Fruits
+      'möhren': { name: 'Marchewka', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'karotten': { name: 'Marchewka', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'broccoli': { name: 'Brokuł', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'brokkoli': { name: 'Brokuł', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'petersilie': { name: 'Pietruszka', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'avocado': { name: 'Awokado', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'sellerie': { name: 'Seler naciowy', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'staudensellerie': { name: 'Seler naciowy', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'tomaten': { name: 'Pomidory', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'datteltomaten': { name: 'Pomidorki daktylowe', unit: 'opak.', category: 'Warzywa i owoce', qty: 1 },
+      'paprika': { name: 'Papryka', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'zwiebel': { name: 'Cebula', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'knoblauch': { name: 'Czosnek', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'kartoffel': { name: 'Ziemniaki', unit: 'kg', category: 'Warzywa i owoce', qty: 1 },
+      'gurke': { name: 'Ogórek', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'zucchini': { name: 'Cukinia', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'spinat': { name: 'Szpinak', unit: 'opak.', category: 'Warzywa i owoce', qty: 1 },
+      'salat': { name: 'Sałata', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'pilze': { name: 'Grzyby', unit: 'opak.', category: 'Warzywa i owoce', qty: 1 },
+      'champignon': { name: 'Pieczarki', unit: 'opak.', category: 'Warzywa i owoce', qty: 1 },
+      'äpfel': { name: 'Jabłka', unit: 'kg', category: 'Warzywa i owoce', qty: 1 },
+      'apfel': { name: 'Jabłka', unit: 'kg', category: 'Warzywa i owoce', qty: 1 },
+      'banane': { name: 'Banany', unit: 'kg', category: 'Warzywa i owoce', qty: 1 },
+      'zitrone': { name: 'Cytryna', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'ingwer': { name: 'Imbir', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'lauch': { name: 'Por', unit: 'szt.', category: 'Warzywa i owoce', qty: 1 },
+      'mais': { name: 'Kukurydza', unit: 'puszka', category: 'Konserwy', qty: 1 },
+
+      // Dairy
+      'mozzarella': { name: 'Mozzarella', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'käse': { name: 'Ser', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'grillkäse': { name: 'Ser halloumi', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'hallumi': { name: 'Ser halloumi', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'halloumi': { name: 'Ser halloumi', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'milch': { name: 'Mleko', unit: 'butelka', category: 'Nabiał', qty: 1 },
+      'joghurt': { name: 'Jogurt', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'butter': { name: 'Masło', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'sahne': { name: 'Śmietana', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'schmand': { name: 'Śmietana', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'quark': { name: 'Twaróg', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'eier': { name: 'Jajka', unit: 'opak.', category: 'Nabiał', qty: 1 },
+      'ei': { name: 'Jajka', unit: 'opak.', category: 'Nabiał', qty: 1 },
+
+      // Meat
+      'hackfleisch': { name: 'Mięso mielone', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'hähnchen': { name: 'Kurczak', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'huhn': { name: 'Kurczak', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'hühnchen': { name: 'Kurczak', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'schnitzel': { name: 'Sznycel', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'wurst': { name: 'Kiełbasa', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'schinken': { name: 'Szynka', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'lachs': { name: 'Łosoś', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'fisch': { name: 'Ryba', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'rind': { name: 'Wołowina', unit: 'opak.', category: 'Mięso', qty: 1 },
+      'schwein': { name: 'Wieprzowina', unit: 'opak.', category: 'Mięso', qty: 1 },
+
+      // Flour, pasta, grains
+      'mehl': { name: 'Mąka pszenna', unit: 'g', category: 'Makarony i mąki', qty: 1000 },
+      'dinkel': { name: 'Mąka orkiszowa', unit: 'g', category: 'Makarony i mąki', qty: 1000 },
+      'nudel': { name: 'Makaron', unit: 'g', category: 'Makarony i mąki', qty: 500 },
+      'pasta': { name: 'Makaron', unit: 'g', category: 'Makarony i mąki', qty: 500 },
+      'spaghetti': { name: 'Spaghetti', unit: 'g', category: 'Makarony i mąki', qty: 500 },
+      'fettuc': { name: 'Fettuccine', unit: 'g', category: 'Makarony i mąki', qty: 500 },
+      'mezzane': { name: 'Fettuccine', unit: 'g', category: 'Makarony i mąki', qty: 500 },
+      'reis': { name: 'Ryż', unit: 'g', category: 'Kasze i rośliny strączkowe', qty: 500 },
+      'hafer': { name: 'Płatki owsiane', unit: 'opak.', category: 'Makarony i mąki', qty: 1 },
+      'haferflocken': { name: 'Płatki owsiane', unit: 'opak.', category: 'Makarony i mąki', qty: 1 },
+      'haferfein': { name: 'Płatki owsiane drobne', unit: 'opak.', category: 'Makarony i mąki', qty: 1 },
+      'masa harina': { name: 'Masa harina', unit: 'opak.', category: 'Makarony i mąki', qty: 1 },
+
+      // Bread
+      'brot': { name: 'Chleb', unit: 'szt.', category: 'Pieczywo', qty: 1 },
+      'brötchen': { name: 'Bułki', unit: 'szt.', category: 'Pieczywo', qty: 1 },
+      'toast': { name: 'Chleb tostowy', unit: 'opak.', category: 'Pieczywo', qty: 1 },
+
+      // Baking
+      'zucker': { name: 'Cukier', unit: 'g', category: 'Cukier i sól', qty: 1000 },
+      'zuckerback': { name: 'Cukier', unit: 'g', category: 'Cukier i sól', qty: 1000 },
+      'salz': { name: 'Sól morska', unit: 'g', category: 'Cukier i sól', qty: 500 },
+      'hefe': { name: 'Drożdże', unit: 'szt.', category: 'Pieczenie', qty: 1 },
+      'backpulver': { name: 'Proszek do pieczenia', unit: 'szt.', category: 'Pieczenie', qty: 1 },
+      'vanille': { name: 'Cukier waniliowy', unit: 'szt.', category: 'Pieczenie', qty: 1 },
+      'kakao': { name: 'Kakao', unit: 'opak.', category: 'Pieczenie', qty: 1 },
+      'schokolade': { name: 'Czekolada', unit: 'opak.', category: 'Pieczenie', qty: 1 },
+      'stärke': { name: 'Skrobia kukurydziana', unit: 'opak.', category: 'Pieczenie', qty: 1 },
+      'speisestärke': { name: 'Skrobia kukurydziana', unit: 'opak.', category: 'Pieczenie', qty: 1 },
+
+      // Condiments
+      'öl': { name: 'Olej', unit: 'butelka', category: 'Przyprawy i sosy', qty: 1 },
+      'olivenöl': { name: 'Oliwa z oliwek', unit: 'butelka', category: 'Przyprawy i sosy', qty: 1 },
+      'essig': { name: 'Ocet', unit: 'butelka', category: 'Przyprawy i sosy', qty: 1 },
+      'senf': { name: 'Musztarda', unit: 'słoik', category: 'Przyprawy i sosy', qty: 1 },
+      'ketchup': { name: 'Ketchup', unit: 'butelka', category: 'Przyprawy i sosy', qty: 1 },
+      'sojasoße': { name: 'Sos sojowy', unit: 'butelka', category: 'Przyprawy i sosy', qty: 1 },
+      'sojasauce': { name: 'Sos sojowy', unit: 'butelka', category: 'Przyprawy i sosy', qty: 1 },
+      'pesto': { name: 'Pesto', unit: 'słoik', category: 'Przyprawy i sosy', qty: 1 },
+
+      // Canned
+      'kichererbsen': { name: 'Ciecierzyca', unit: 'puszka', category: 'Konserwy', qty: 1 },
+      'bohnen': { name: 'Fasola', unit: 'puszka', category: 'Konserwy', qty: 1 },
+      'linsen': { name: 'Soczewica', unit: 'puszka', category: 'Konserwy', qty: 1 },
+      'oliven': { name: 'Oliwki', unit: 'słoik', category: 'Konserwy', qty: 1 },
+      'passata': { name: 'Passata pomidorowa', unit: 'opak.', category: 'Konserwy', qty: 1 },
+      'kokosmilch': { name: 'Mleko kokosowe', unit: 'puszka', category: 'Konserwy', qty: 1 },
+
+      // Nuts & seeds
+      'nüsse': { name: 'Orzechy', unit: 'g', category: 'Orzechy i nasiona', qty: 200 },
+      'mandeln': { name: 'Migdały', unit: 'g', category: 'Orzechy i nasiona', qty: 200 },
+      'walnüsse': { name: 'Orzechy włoskie', unit: 'g', category: 'Orzechy i nasiona', qty: 200 },
+      'erdnüsse': { name: 'Orzeszki ziemne', unit: 'g', category: 'Orzechy i nasiona', qty: 200 },
+      'sesam': { name: 'Sezam', unit: 'g', category: 'Orzechy i nasiona', qty: 200 },
+      'sonnenblumenkerne': { name: 'Pestki słonecznika', unit: 'g', category: 'Orzechy i nasiona', qty: 200 },
+
+      // Drinks
+      'wasser': { name: 'Woda', unit: 'butelka', category: 'Napoje', qty: 1 },
+      'saft': { name: 'Sok', unit: 'butelka', category: 'Napoje', qty: 1 },
+      'kaffee': { name: 'Kawa', unit: 'opak.', category: 'Napoje', qty: 1 },
+      'tee': { name: 'Herbata', unit: 'opak.', category: 'Napoje', qty: 1 },
+
+      // Other
+      'tofu': { name: 'Tofu', unit: 'opak.', category: 'Inne', qty: 1 },
+      'pflanzk': { name: 'Masło roślinne', unit: 'opak.', category: 'Nabiał', qty: 1 },
+    };
+
+    // Parse OCR text into receipt line items
+    function parseReceiptLines(text) {
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+      const items = [];
+      // Typical Lidl receipt line: "Product Name    1,99 A"
+      // or with quantity: "0,536 kg x 1,99 EUR/kg"
+      // We look for lines that have a price pattern
+      const priceRe = /(\d+[.,]\d{2})\s*[A-B]?\s*$/;
+      const qtyLineRe = /^(\d+[.,]\d+)\s*kg\s*x/i;
+      const countLineRe = /^(\d+)\s*x\s/i;
+
+      let pendingQtyKg = null;
+      let pendingCount = null;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // Check if this is a quantity line (e.g. "0,536 kg x 1,99 EUR/kg")
+        const qtyMatch = line.match(qtyLineRe);
+        if (qtyMatch) {
+          pendingQtyKg = parseFloat(qtyMatch[1].replace(',', '.'));
+          continue;
+        }
+
+        // Check for count multiplier (e.g. "2 x 1,49")
+        const countMatch = line.match(countLineRe);
+        if (countMatch) {
+          pendingCount = parseInt(countMatch[1]);
+          continue;
+        }
+
+        // Check if line has a price at the end → it's a product
+        const pm = line.match(priceRe);
+        if (pm) {
+          let name = line.replace(priceRe, '').trim();
+          const price = parseFloat(pm[1].replace(',', '.'));
+          // Skip subtotals, totals, payment lines
+          if (/^(summe|gesamt|total|bar|karte|zahlung|gegeben|rückgeld|mwst|netto|brutto)/i.test(name)) continue;
+          if (/^(zu zahlen|geg\.|eur)/i.test(name)) continue;
+          if (!name || name.length < 2) continue;
+
+          let count = pendingCount || 1;
+          pendingCount = null;
+          let weightKg = pendingQtyKg;
+          pendingQtyKg = null;
+
+          items.push({ rawName: name, price, count, weightKg });
+        }
+      }
+      return items;
+    }
+
+    // Match a German receipt item name to our DE→PL map
+    function matchReceiptItem(rawName) {
+      const lower = rawName.toLowerCase()
+        .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
+      const lowerOrig = rawName.toLowerCase();
+
+      // Try each keyword — longest match wins
+      let bestKey = null;
+      let bestLen = 0;
+      for (const key of Object.keys(DE_PL_MAP)) {
+        if ((lowerOrig.includes(key) || lower.includes(key)) && key.length > bestLen) {
+          bestKey = key;
+          bestLen = key.length;
+        }
+      }
+      if (bestKey) return { ...DE_PL_MAP[bestKey] };
+
+      // No match — return raw name as-is
+      return null;
+    }
+
+    let scannedItems = []; // { rawName, price, count, weightKg, plMatch, selected }
+
+    async function scanReceipt(input) {
+      const file = input.files[0];
+      if (!file) return;
+
+      const content = document.getElementById('receipt-content');
+      content.innerHTML = '<div class="receipt-progress">'
+        + '<div>Skanowanie paragonu...</div>'
+        + '<div class="bar"><div class="bar-fill" id="ocr-bar" style="width:0%"></div></div>'
+        + '<div id="ocr-status">Ładowanie OCR...</div>'
+        + '</div>';
+
+      try {
+        // Load Tesseract.js from CDN
+        if (!window.Tesseract) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+
+        const bar = document.getElementById('ocr-bar');
+        const status = document.getElementById('ocr-status');
+
+        const worker = await Tesseract.createWorker('deu', 1, {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              const pct = Math.round((m.progress || 0) * 100);
+              bar.style.width = pct + '%';
+              status.textContent = 'Rozpoznawanie tekstu... ' + pct + '%';
+            }
+          }
+        });
+
+        const { data } = await worker.recognize(file);
+        await worker.terminate();
+
+        // Parse receipt lines
+        const receiptLines = parseReceiptLines(data.text);
+
+        if (receiptLines.length === 0) {
+          content.innerHTML = '<div class="empty">Nie rozpoznano produktów na paragonie.<br><small>Spróbuj lepsze zdjęcie.</small></div>'
+            + '<div class="receipt-upload"><label for="receipt-file">'
+            + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>'
+            + 'Spróbuj ponownie</label></div>';
+          return;
+        }
+
+        // Match against DE→PL map and existing inventory
+        if (allItems.length === 0) await loadItems();
+
+        scannedItems = receiptLines.map(line => {
+          const plMatch = matchReceiptItem(line.rawName);
+          // Check if item already exists in inventory (by stem matching)
+          let existingItem = null;
+          if (plMatch) {
+            for (const inv of allItems) {
+              if (inv.name.toLowerCase() === plMatch.name.toLowerCase()) {
+                existingItem = inv;
+                break;
+              }
+              // Also try stem matching
+              const score = matchScore(inv.name, plMatch.name);
+              if (score > 0) { existingItem = inv; break; }
+            }
+          }
+          return {
+            ...line,
+            plMatch,
+            existingItem,
+            selected: !!plMatch // auto-select matched items
+          };
+        });
+
+        renderScannedItems();
+      } catch (err) {
+        content.innerHTML = '<div class="empty">Błąd OCR: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    function renderScannedItems() {
+      const content = document.getElementById('receipt-content');
+      let html = '<div style="padding:12px 16px 4px"><b>Rozpoznane produkty (' + scannedItems.length + ')</b></div>';
+
+      scannedItems.forEach((item, idx) => {
+        const checked = item.selected ? 'checked' : '';
+        const plName = item.plMatch ? item.plMatch.name : item.rawName;
+        const isNew = item.plMatch && !item.existingItem;
+        const isUpdate = item.plMatch && item.existingItem;
+
+        html += '<div class="scan-item" onclick="toggleScanItem(' + idx + ')">'
+          + '<div class="si-check ' + checked + '">' + (item.selected ? '✓' : '') + '</div>'
+          + '<div class="si-info">'
+          + '<div class="si-de">' + escapeHtml(item.rawName) + ' · ' + item.price.toFixed(2) + '€'
+          + (item.count > 1 ? ' x' + item.count : '') + '</div>'
+          + '<div class="si-pl">' + escapeHtml(plName)
+          + (item.plMatch ? '' : ' <span style="color:var(--text-dim)">(nieznany)</span>')
+          + '</div>';
+
+        if (isUpdate) {
+          const inv = item.existingItem;
+          const qty = inv.quantity === Math.floor(inv.quantity) ? Math.floor(inv.quantity) : inv.quantity;
+          html += '<div class="si-qty">w magazynie: ' + qty + ' ' + escapeHtml(inv.unit) + '</div>';
+        } else if (isNew) {
+          html += '<div class="si-new">+ nowy produkt</div>';
+        }
+
+        html += '</div></div>';
+      });
+
+      const selectedCount = scannedItems.filter(i => i.selected).length;
+      html += '<div class="scan-actions">'
+        + '<button style="background:var(--green);color:#1a1a2e" onclick="addScannedToInventory()">'
+        + 'Dodaj do magazynu (' + selectedCount + ')</button>'
+        + '</div>';
+
+      // Re-scan option
+      html += '<div class="receipt-upload" style="padding-top:0"><label for="receipt-file">'
+        + 'Skanuj inny paragon</label></div>';
+
+      content.innerHTML = html;
+    }
+
+    function toggleScanItem(idx) {
+      scannedItems[idx].selected = !scannedItems[idx].selected;
+      renderScannedItems();
+    }
+
+    async function addScannedToInventory() {
+      const selected = scannedItems.filter(i => i.selected && i.plMatch);
+      if (selected.length === 0) { alert('Zaznacz produkty do dodania.'); return; }
+
+      const names = selected.map(i => i.plMatch.name).join(', ');
+      if (!confirm('Dodać do magazynu?\n\n' + names)) return;
+
+      try {
+        for (const item of selected) {
+          const pl = item.plMatch;
+          const count = item.count || 1;
+
+          if (item.existingItem) {
+            // Update existing: add quantity
+            const inv = item.existingItem;
+            let addQty;
+            if (['g', 'ml'].includes(inv.unit)) {
+              // If weight was detected on receipt, use it; otherwise use default from map
+              addQty = item.weightKg ? item.weightKg * 1000 : pl.qty * count;
+            } else {
+              addQty = count;
+            }
+            const newQty = inv.quantity + addQty;
+            await api('/inventory?id=eq.' + inv.id, {
+              method: 'PATCH',
+              body: JSON.stringify({ quantity: newQty })
+            });
+          } else {
+            // Insert new item
+            let qty;
+            if (item.weightKg) {
+              qty = item.weightKg * 1000;
+              pl.unit = 'g';
+            } else {
+              qty = pl.qty * count;
+            }
+            await api('/inventory', {
+              method: 'POST',
+              body: JSON.stringify({ name: pl.name, quantity: qty, unit: pl.unit, category: pl.category })
+            });
+          }
+        }
+
+        await loadItems();
+
+        const content = document.getElementById('receipt-content');
+        content.innerHTML = '<div class="empty" style="color:var(--green)">Dodano ' + selected.length + ' produktów!</div>'
+          + '<div class="receipt-upload"><label for="receipt-file">'
+          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>'
+          + 'Skanuj kolejny paragon</label></div>';
+      } catch (err) {
+        alert('Błąd: ' + err.message);
       }
     }
 
