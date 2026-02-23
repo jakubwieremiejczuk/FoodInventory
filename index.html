@@ -1111,25 +1111,53 @@
       return items;
     }
 
-    // Match a German receipt item name to our DE→PL map
+    // --- Custom mappings (saved corrections) ---
+    function loadCustomMap() {
+      try { return JSON.parse(localStorage.getItem('receipt_custom_map') || '{}'); }
+      catch { return {}; }
+    }
+    function saveCustomMap(map) {
+      localStorage.setItem('receipt_custom_map', JSON.stringify(map));
+    }
+    // key = normalized rawName, value = { name, unit, category, qty }
+    let customMap = loadCustomMap();
+
+    function normalizeKey(rawName) {
+      return rawName.toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+
+    // Match a German receipt item name: custom map first, then built-in DE_PL_MAP
     function matchReceiptItem(rawName) {
+      const key = normalizeKey(rawName);
+
+      // 1. Check custom map (user corrections) — exact match on normalized name
+      if (customMap[key]) {
+        return { ...customMap[key], fromCustom: true };
+      }
+
+      // 2. Built-in DE→PL map — keyword matching
       const lower = rawName.toLowerCase()
         .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
       const lowerOrig = rawName.toLowerCase();
 
-      // Try each keyword — longest match wins
       let bestKey = null;
       let bestLen = 0;
-      for (const key of Object.keys(DE_PL_MAP)) {
-        if ((lowerOrig.includes(key) || lower.includes(key)) && key.length > bestLen) {
-          bestKey = key;
-          bestLen = key.length;
+      for (const k of Object.keys(DE_PL_MAP)) {
+        if ((lowerOrig.includes(k) || lower.includes(k)) && k.length > bestLen) {
+          bestKey = k;
+          bestLen = k.length;
         }
       }
       if (bestKey) return { ...DE_PL_MAP[bestKey] };
 
-      // No match — return raw name as-is
       return null;
+    }
+
+    // Save a correction to custom map
+    function saveCorrection(rawName, plData) {
+      const key = normalizeKey(rawName);
+      customMap[key] = { name: plData.name, unit: plData.unit, category: plData.category, qty: plData.qty };
+      saveCustomMap(customMap);
     }
 
     let scannedItems = []; // { rawName, price, count, weightKg, plMatch, selected }
@@ -1221,18 +1249,24 @@
       let html = '<div style="padding:12px 16px 4px"><b>Rozpoznane produkty (' + scannedItems.length + ')</b></div>';
 
       const unitOptions = ['g','ml','szt.','opak.','puszka','słoik','butelka','kg'];
+      const catOptions = ['Konserwy','Przyprawy i sosy','Kasze i rośliny strączkowe','Makarony i mąki',
+        'Pasty curry','Pieczenie','Cukier i sól','Orzechy i nasiona',
+        'Warzywa i owoce','Nabiał','Mięso','Pieczywo','Napoje','Inne'];
 
       scannedItems.forEach((item, idx) => {
         const checked = item.selected ? 'checked' : '';
-        const plName = item.plMatch ? item.plMatch.name : item.rawName;
+        const plName = item.editName !== undefined ? item.editName : (item.plMatch ? item.plMatch.name : '');
+        const plCat = item.editCat !== undefined ? item.editCat : (item.plMatch ? item.plMatch.category : 'Inne');
         const isNew = item.plMatch && !item.existingItem;
         const isUpdate = item.plMatch && item.existingItem;
+        const isCustom = item.plMatch && item.plMatch.fromCustom;
+        const isUnknown = !item.plMatch && item.editName === undefined;
 
         // Determine displayed quantity
         let dispQty, dispUnit;
         if (item.editQty !== undefined) {
           dispQty = item.editQty;
-          dispUnit = item.editUnit;
+          dispUnit = item.editUnit || (item.plMatch ? item.plMatch.unit : 'szt.');
         } else if (item.weightKg) {
           dispQty = Math.round(item.weightKg * 1000);
           dispUnit = 'g';
@@ -1243,19 +1277,27 @@
           dispQty = item.count || 1;
           dispUnit = 'szt.';
         }
+        if (item.editUnit !== undefined) dispUnit = item.editUnit;
 
         html += '<div class="scan-item">'
           + '<div class="si-check ' + checked + '" onclick="toggleScanItem(' + idx + ')">' + (item.selected ? '✓' : '') + '</div>'
           + '<div class="si-info">'
           + '<div class="si-de">' + escapeHtml(item.rawName) + ' · ' + item.price.toFixed(2) + '€'
-          + (item.count > 1 ? ' x' + item.count : '') + '</div>'
-          + '<div class="si-pl">' + escapeHtml(plName)
-          + (item.plMatch ? '' : ' <span style="color:var(--text-dim)">(nieznany)</span>')
+          + (item.count > 1 ? ' x' + item.count : '')
+          + (isCustom ? ' <span style="color:var(--green);font-size:11px">zapamiętane</span>' : '')
           + '</div>';
 
-        // Editable quantity row
+        // Editable product name
+        html += '<div class="si-edit" style="margin-top:3px">'
+          + '<span style="font-size:12px;color:var(--text-dim);min-width:42px">Nazwa:</span>'
+          + '<input type="text" style="flex:1;width:auto" value="' + escapeHtml(plName) + '" '
+          + 'placeholder="Wpisz nazwę po polsku" '
+          + 'onchange="updateScanName(' + idx + ', this.value)" onclick="event.stopPropagation()">'
+          + '</div>';
+
+        // Editable quantity + unit + category
         html += '<div class="si-edit">'
-          + '<span style="font-size:12px;color:var(--text-dim)">Ilość:</span>'
+          + '<span style="font-size:12px;color:var(--text-dim);min-width:42px">Ilość:</span>'
           + '<input type="number" step="any" value="' + dispQty + '" onchange="updateScanQty(' + idx + ', this.value)" onclick="event.stopPropagation()">'
           + '<select onchange="updateScanUnit(' + idx + ', this.value)" onclick="event.stopPropagation()">';
         for (const u of unitOptions) {
@@ -1267,11 +1309,21 @@
           const inv = item.existingItem;
           const qty = inv.quantity === Math.floor(inv.quantity) ? Math.floor(inv.quantity) : inv.quantity;
           html += '<span class="si-qty">masz: ' + qty + ' ' + escapeHtml(inv.unit) + '</span>';
-        } else if (isNew) {
+        } else if (isNew || plName) {
           html += '<span class="si-new">+ nowy</span>';
         }
 
-        html += '</div>'; // si-edit
+        html += '</div>'; // si-edit qty
+
+        // Category selector
+        html += '<div class="si-edit">'
+          + '<span style="font-size:12px;color:var(--text-dim);min-width:42px">Kat.:</span>'
+          + '<select style="flex:1" onchange="updateScanCat(' + idx + ', this.value)" onclick="event.stopPropagation()">';
+        for (const c of catOptions) {
+          html += '<option value="' + c + '"' + (c === plCat ? ' selected' : '') + '>' + c + '</option>';
+        }
+        html += '</select></div>';
+
         html += '</div></div>'; // si-info, scan-item
       });
 
@@ -1293,6 +1345,23 @@
       renderScannedItems();
     }
 
+    function updateScanName(idx, val) {
+      scannedItems[idx].editName = val.trim();
+      // Auto-select if user typed a name
+      if (val.trim() && !scannedItems[idx].selected) {
+        scannedItems[idx].selected = true;
+      }
+      // If no plMatch yet, create one so it can be saved
+      if (!scannedItems[idx].plMatch && val.trim()) {
+        scannedItems[idx].plMatch = {
+          name: val.trim(),
+          unit: scannedItems[idx].editUnit || 'szt.',
+          category: scannedItems[idx].editCat || 'Inne',
+          qty: scannedItems[idx].editQty || 1
+        };
+      }
+    }
+
     function updateScanQty(idx, val) {
       scannedItems[idx].editQty = parseFloat(val) || 0;
     }
@@ -1301,45 +1370,66 @@
       scannedItems[idx].editUnit = val;
     }
 
+    function updateScanCat(idx, val) {
+      scannedItems[idx].editCat = val;
+    }
+
     async function addScannedToInventory() {
-      const selected = scannedItems.filter(i => i.selected && i.plMatch);
+      const selected = scannedItems.filter(i => i.selected && (i.plMatch || i.editName));
       if (selected.length === 0) { alert('Zaznacz produkty do dodania.'); return; }
 
-      const names = selected.map(i => i.plMatch.name).join(', ');
+      const names = selected.map(i => (i.editName || (i.plMatch && i.plMatch.name) || i.rawName)).join(', ');
       if (!confirm('Dodać do magazynu?\n\n' + names)) return;
 
       try {
         for (const item of selected) {
-          const pl = item.plMatch;
+          // Resolve final name, unit, category, qty from edits or plMatch
+          const finalName = item.editName || (item.plMatch && item.plMatch.name) || item.rawName;
+          const finalCat = item.editCat || (item.plMatch && item.plMatch.category) || 'Inne';
           const count = item.count || 1;
 
-          // Use user-edited values if available, otherwise auto-detected
           let addQty, addUnit;
           if (item.editQty !== undefined) {
             addQty = item.editQty;
-            addUnit = item.editUnit || pl.unit;
+            addUnit = item.editUnit || (item.plMatch && item.plMatch.unit) || 'szt.';
           } else if (item.weightKg) {
             addQty = Math.round(item.weightKg * 1000);
             addUnit = 'g';
+          } else if (item.plMatch) {
+            addQty = item.plMatch.qty * count;
+            addUnit = item.plMatch.unit;
           } else {
-            addQty = pl.qty * count;
-            addUnit = pl.unit;
+            addQty = count;
+            addUnit = 'szt.';
+          }
+          if (item.editUnit !== undefined) addUnit = item.editUnit;
+
+          // Save correction to custom map for future scans
+          saveCorrection(item.rawName, { name: finalName, unit: addUnit, category: finalCat, qty: addQty / Math.max(count, 1) });
+
+          // Re-check if item exists in inventory by name
+          let existingItem = item.existingItem;
+          if (!existingItem) {
+            for (const inv of allItems) {
+              if (inv.name.toLowerCase() === finalName.toLowerCase()) {
+                existingItem = inv;
+                break;
+              }
+              const score = matchScore(inv.name, finalName);
+              if (score > 0) { existingItem = inv; break; }
+            }
           }
 
-          if (item.existingItem) {
-            // Update existing: add quantity
-            const inv = item.existingItem;
-            // If units match, just add; if different, add as-is (user chose)
-            const newQty = inv.quantity + addQty;
-            await api('/inventory?id=eq.' + inv.id, {
+          if (existingItem) {
+            const newQty = existingItem.quantity + addQty;
+            await api('/inventory?id=eq.' + existingItem.id, {
               method: 'PATCH',
               body: JSON.stringify({ quantity: newQty })
             });
           } else {
-            // Insert new item
             await api('/inventory', {
               method: 'POST',
-              body: JSON.stringify({ name: pl.name, quantity: addQty, unit: addUnit, category: pl.category })
+              body: JSON.stringify({ name: finalName, quantity: addQty, unit: addUnit, category: finalCat })
             });
           }
         }
