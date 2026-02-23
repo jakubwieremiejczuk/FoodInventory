@@ -1119,19 +1119,28 @@
       return items;
     }
 
-    // --- Custom mappings (saved corrections) ---
-    function loadCustomMap() {
-      try { return JSON.parse(localStorage.getItem('receipt_custom_map') || '{}'); }
-      catch { return {}; }
-    }
-    function saveCustomMap(map) {
-      localStorage.setItem('receipt_custom_map', JSON.stringify(map));
-    }
-    // key = normalized rawName, value = { name, unit, category, qty }
-    let customMap = loadCustomMap();
+    // --- Custom mappings (Supabase-backed, shared across devices) ---
+    let customMap = {}; // key = normalized rawName, value = { name, unit, category, qty }
+    let customMapLoaded = false;
 
     function normalizeKey(rawName) {
       return rawName.toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+
+    async function loadCustomMap() {
+      try {
+        const rows = await api('/receipt_mappings?select=*');
+        customMap = {};
+        for (const row of rows) {
+          customMap[row.ocr_key] = { name: row.pl_name, unit: row.unit, category: row.category, qty: row.qty, id: row.id };
+        }
+        customMapLoaded = true;
+      } catch (err) {
+        // Table might not exist yet — fall back to localStorage
+        console.warn('receipt_mappings table not available, using localStorage:', err.message);
+        try { customMap = JSON.parse(localStorage.getItem('receipt_custom_map') || '{}'); }
+        catch { customMap = {}; }
+      }
     }
 
     // Match a German receipt item name: custom map first, then built-in DE_PL_MAP
@@ -1161,11 +1170,33 @@
       return null;
     }
 
-    // Save a correction to custom map
-    function saveCorrection(rawName, plData) {
+    // Save a correction to Supabase (upsert by ocr_key)
+    async function saveCorrection(rawName, plData) {
       const key = normalizeKey(rawName);
-      customMap[key] = { name: plData.name, unit: plData.unit, category: plData.category, qty: plData.qty };
-      saveCustomMap(customMap);
+      const row = { ocr_key: key, pl_name: plData.name, unit: plData.unit, category: plData.category, qty: plData.qty };
+
+      try {
+        if (customMap[key] && customMap[key].id) {
+          // Update existing
+          await api('/receipt_mappings?id=eq.' + customMap[key].id, {
+            method: 'PATCH',
+            body: JSON.stringify(row)
+          });
+        } else {
+          // Insert new
+          const result = await api('/receipt_mappings', {
+            method: 'POST',
+            body: JSON.stringify(row)
+          });
+          if (result && result[0]) row.id = result[0].id;
+        }
+        customMap[key] = { name: plData.name, unit: plData.unit, category: plData.category, qty: plData.qty, id: row.id };
+      } catch (err) {
+        // Fallback to localStorage if table doesn't exist
+        console.warn('Could not save to Supabase, using localStorage:', err.message);
+        customMap[key] = { name: plData.name, unit: plData.unit, category: plData.category, qty: plData.qty };
+        localStorage.setItem('receipt_custom_map', JSON.stringify(customMap));
+      }
     }
 
     let scannedItems = []; // { rawName, price, count, weightKg, plMatch, selected }
@@ -1220,8 +1251,9 @@
           return;
         }
 
-        // Match against DE→PL map and existing inventory
+        // Make sure data is loaded
         if (allItems.length === 0) await loadItems();
+        if (!customMapLoaded) await loadCustomMap();
 
         scannedItems = receiptLines.map(line => {
           const plMatch = matchReceiptItem(line.rawName);
@@ -1458,6 +1490,23 @@
 
     // --- Init ---
     loadItems();
+    loadCustomMap().then(async () => {
+      // Migrate any localStorage mappings to Supabase
+      if (customMapLoaded) {
+        try {
+          const local = JSON.parse(localStorage.getItem('receipt_custom_map') || '{}');
+          const keys = Object.keys(local);
+          if (keys.length > 0) {
+            for (const k of keys) {
+              if (!customMap[k]) {
+                await saveCorrection(k, local[k]);
+              }
+            }
+            localStorage.removeItem('receipt_custom_map');
+          }
+        } catch {}
+      }
+    });
   </script>
 </body>
 </html>
