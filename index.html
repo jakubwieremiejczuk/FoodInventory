@@ -336,6 +336,33 @@
     .scan-item .si-pl { font-size: 14px; }
     .scan-item .si-qty { font-size: 13px; color: var(--green); white-space: nowrap; }
     .scan-item .si-new { font-size: 11px; color: var(--accent); }
+    .scan-item .si-edit {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+      align-items: center;
+    }
+    .scan-item .si-edit input {
+      width: 70px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+    .scan-item .si-edit input:focus { border-color: var(--accent); }
+    .scan-item .si-edit select {
+      padding: 4px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .scan-item .si-edit select:focus { border-color: var(--accent); }
 
     .scan-actions { padding: 16px; }
     .scan-actions button {
@@ -1193,14 +1220,32 @@
       const content = document.getElementById('receipt-content');
       let html = '<div style="padding:12px 16px 4px"><b>Rozpoznane produkty (' + scannedItems.length + ')</b></div>';
 
+      const unitOptions = ['g','ml','szt.','opak.','puszka','słoik','butelka','kg'];
+
       scannedItems.forEach((item, idx) => {
         const checked = item.selected ? 'checked' : '';
         const plName = item.plMatch ? item.plMatch.name : item.rawName;
         const isNew = item.plMatch && !item.existingItem;
         const isUpdate = item.plMatch && item.existingItem;
 
-        html += '<div class="scan-item" onclick="toggleScanItem(' + idx + ')">'
-          + '<div class="si-check ' + checked + '">' + (item.selected ? '✓' : '') + '</div>'
+        // Determine displayed quantity
+        let dispQty, dispUnit;
+        if (item.editQty !== undefined) {
+          dispQty = item.editQty;
+          dispUnit = item.editUnit;
+        } else if (item.weightKg) {
+          dispQty = Math.round(item.weightKg * 1000);
+          dispUnit = 'g';
+        } else if (item.plMatch) {
+          dispQty = item.plMatch.qty * (item.count || 1);
+          dispUnit = item.plMatch.unit;
+        } else {
+          dispQty = item.count || 1;
+          dispUnit = 'szt.';
+        }
+
+        html += '<div class="scan-item">'
+          + '<div class="si-check ' + checked + '" onclick="toggleScanItem(' + idx + ')">' + (item.selected ? '✓' : '') + '</div>'
           + '<div class="si-info">'
           + '<div class="si-de">' + escapeHtml(item.rawName) + ' · ' + item.price.toFixed(2) + '€'
           + (item.count > 1 ? ' x' + item.count : '') + '</div>'
@@ -1208,15 +1253,26 @@
           + (item.plMatch ? '' : ' <span style="color:var(--text-dim)">(nieznany)</span>')
           + '</div>';
 
+        // Editable quantity row
+        html += '<div class="si-edit">'
+          + '<span style="font-size:12px;color:var(--text-dim)">Ilość:</span>'
+          + '<input type="number" step="any" value="' + dispQty + '" onchange="updateScanQty(' + idx + ', this.value)" onclick="event.stopPropagation()">'
+          + '<select onchange="updateScanUnit(' + idx + ', this.value)" onclick="event.stopPropagation()">';
+        for (const u of unitOptions) {
+          html += '<option value="' + u + '"' + (u === dispUnit ? ' selected' : '') + '>' + u + '</option>';
+        }
+        html += '</select>';
+
         if (isUpdate) {
           const inv = item.existingItem;
           const qty = inv.quantity === Math.floor(inv.quantity) ? Math.floor(inv.quantity) : inv.quantity;
-          html += '<div class="si-qty">w magazynie: ' + qty + ' ' + escapeHtml(inv.unit) + '</div>';
+          html += '<span class="si-qty">masz: ' + qty + ' ' + escapeHtml(inv.unit) + '</span>';
         } else if (isNew) {
-          html += '<div class="si-new">+ nowy produkt</div>';
+          html += '<span class="si-new">+ nowy</span>';
         }
 
-        html += '</div></div>';
+        html += '</div>'; // si-edit
+        html += '</div></div>'; // si-info, scan-item
       });
 
       const selectedCount = scannedItems.filter(i => i.selected).length;
@@ -1237,6 +1293,14 @@
       renderScannedItems();
     }
 
+    function updateScanQty(idx, val) {
+      scannedItems[idx].editQty = parseFloat(val) || 0;
+    }
+
+    function updateScanUnit(idx, val) {
+      scannedItems[idx].editUnit = val;
+    }
+
     async function addScannedToInventory() {
       const selected = scannedItems.filter(i => i.selected && i.plMatch);
       if (selected.length === 0) { alert('Zaznacz produkty do dodania.'); return; }
@@ -1249,16 +1313,23 @@
           const pl = item.plMatch;
           const count = item.count || 1;
 
+          // Use user-edited values if available, otherwise auto-detected
+          let addQty, addUnit;
+          if (item.editQty !== undefined) {
+            addQty = item.editQty;
+            addUnit = item.editUnit || pl.unit;
+          } else if (item.weightKg) {
+            addQty = Math.round(item.weightKg * 1000);
+            addUnit = 'g';
+          } else {
+            addQty = pl.qty * count;
+            addUnit = pl.unit;
+          }
+
           if (item.existingItem) {
             // Update existing: add quantity
             const inv = item.existingItem;
-            let addQty;
-            if (['g', 'ml'].includes(inv.unit)) {
-              // If weight was detected on receipt, use it; otherwise use default from map
-              addQty = item.weightKg ? item.weightKg * 1000 : pl.qty * count;
-            } else {
-              addQty = count;
-            }
+            // If units match, just add; if different, add as-is (user chose)
             const newQty = inv.quantity + addQty;
             await api('/inventory?id=eq.' + inv.id, {
               method: 'PATCH',
@@ -1266,16 +1337,9 @@
             });
           } else {
             // Insert new item
-            let qty;
-            if (item.weightKg) {
-              qty = item.weightKg * 1000;
-              pl.unit = 'g';
-            } else {
-              qty = pl.qty * count;
-            }
             await api('/inventory', {
               method: 'POST',
-              body: JSON.stringify({ name: pl.name, quantity: qty, unit: pl.unit, category: pl.category })
+              body: JSON.stringify({ name: pl.name, quantity: addQty, unit: addUnit, category: pl.category })
             });
           }
         }
