@@ -767,8 +767,21 @@
         .map(w => stem(w));
     }
 
+    // Polish cooking measurement → ml/g conversion
+    // 1 łyżka (tablespoon) = 15 ml, 1 łyżeczka (teaspoon) = 5 ml
+    // 1 szklanka (glass/cup) = 250 ml, 1 szczypta (pinch) ≈ 1 g
+    const MEASURE_ML = {
+      'łyżka': 15, 'łyżki': 15, 'łyżek': 15,
+      'lyżka': 15, 'lyżki': 15, 'lyżek': 15,
+      'łyżeczka': 5, 'łyżeczki': 5, 'łyżeczek': 5,
+      'lyżeczka': 5, 'lyżeczki': 5, 'lyżeczek': 5,
+      'szklanka': 250, 'szklanki': 250, 'szklanek': 250,
+      'szczypta': 1, 'szczypty': 1, 'szczypt': 1,
+    };
+
     // Parse quantity + unit from recipe ingredient text
-    // e.g. "1,5 szklanki mąki pszennej - 250 g" → { qty: 250, unit: 'g' }
+    // e.g. "1,5 szklanki mąki pszennej - 250 g" → { qty: 375, unit: 'ml' }
+    // e.g. "2 łyżki oliwy" → { qty: 30, unit: 'ml' }
     // e.g. "3 jajka" → { qty: 3, unit: 'szt.' }
     function parseRecipeQty(text) {
       const t = text.toLowerCase();
@@ -780,6 +793,22 @@
         if (unit === 'kg') { val *= 1000; unit = 'g'; }
         if (unit === 'l') { val *= 1000; unit = 'ml'; }
         return { qty: val, unit };
+      }
+      // Polish cooking measurements (łyżka, łyżeczka, szklanka, szczypta)
+      for (const [word, mlPerUnit] of Object.entries(MEASURE_ML)) {
+        const re = new RegExp('(\\d+[.,]?\\d*)\\s*' + word.replace(/ż/g, '[żz]').replace(/ł/g, '[łl]'), 'i');
+        const mm = t.match(re);
+        if (mm) {
+          const count = parseFloat(mm[1].replace(',', '.'));
+          // szczypta converts to g, everything else to ml
+          const unit = word.startsWith('szczyp') ? 'g' : 'ml';
+          return { qty: Math.round(count * mlPerUnit), unit };
+        }
+        // Also match without a number (e.g. "łyżka cukru" = 1 łyżka)
+        if (t.includes(word)) {
+          const unit = word.startsWith('szczyp') ? 'g' : 'ml';
+          return { qty: mlPerUnit, unit };
+        }
       }
       // Count-based: look for leading number
       const countMatch = t.match(/^(\d+[.,]?\d*)/);
